@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AttentionNet (Manual 64 Units/Branch) - V20</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        /* Estilos similares a V19, pueden necesitar ajustes */
+        html, body { width: 100%; margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', 'Lato', Arial, sans-serif; background-color: #f4f4f4; display: flex; justify-content: flex-start; align-items: flex-start; min-height: 100vh; padding: 20px; overflow-x: auto;}
+        svg { background-color: #ffffff; display: block; margin: 10px; /* Ancho/Alto gestionado por config */ max-width: none; border: 1px solid #ddd; }
+        .neuron-sphere { stroke: #444; stroke-width: 0.6; }
+        .label { font-size: 15px; font-weight: 700; text-anchor: middle; fill: #222; }
+        .dim_label { font-size: 12px; font-weight: 400; text-anchor: middle; fill: #555555; }
+        /* Símbolos de operación (Add, Multiply, Concat) */
+        .op_symbol_circle { stroke-width: 3; fill: white; filter: url(#dropShadow); }
+        .op_symbol_text { font-size: 26px; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
+        .op_label { font-size: 10px; font-style: italic; text-anchor: middle; }
+        /* Colores específicos para operaciones */
+        .op_add .op_symbol_circle { stroke: #007BFF; }
+        .op_add .op_symbol_text { fill: #007BFF; }
+        .op_add .op_label { fill: #007BFF; }
+        .op_multiply .op_symbol_circle { stroke: #FFC107; } /* Amarillo para multiplicar */
+        .op_multiply .op_symbol_text { fill: #FFC107; }
+        .op_multiply .op_label { fill: #FFC107; }
+        .op_concat .op_symbol_circle { stroke: #9C27B0; } /* Púrpura para concatenar */
+        .op_concat .op_symbol_text { fill: #9C27B0; font-size: 18px; } /* Más pequeño para [;] */
+        .op_concat .op_label { fill: #9C27B0; }
+
+        .activation { font-size: 12px; font-style: italic; text-anchor: middle; fill: #9B59B6; }
+        .data_flow { stroke: #333; stroke-width: 3.5; fill: none; marker-end: url(#arrow); }
+        /* No hay skip connections aquí, pero mantenemos el estilo por si acaso */
+        .skip_connection { stroke: #4CAF50; stroke-width: 3.5; fill: none; marker-end: url(#arrowSkip); }
+        /* No hay resblock labels aquí */
+        /* .resblock_label { font-size: 14px; font-weight: bold; text-anchor: middle; fill: #555; } */
+        .schematic-connection { stroke: #a0c0ff; fill:none; /* Opacity/width set dynamically */ }
+        .filter-shadow { filter: url(#dropShadow); }
+        .formula-label {
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 10px;
+            fill: #666;
+            text-anchor: middle;
+        }
+        /* Estilo para las ramas (opcional) */
+        .branch-group { /* Podría usarse para rodear visualmente las ramas */
+           /* stroke: #ccc; stroke-dasharray: 5,5; fill: none; */
+        }
+    </style>
+</head>
+<body>
+<script>
+    console.log("--- Diagram Generation Start V20 (AttentionNet Manual) ---");
+
+    // --- Configuration (MODIFIED for AttentionNet) ---
+    const config = {
+        // *** CAMBIO: Ajuste de dimensiones SVG ***
+        svgWidth: 3000, // Puede necesitar ajuste
+        svgHeight: 800, // Aumentado para ramas verticales
+        layerHeight: 100, // Altura base de las nubes
+        layerDepth: 60,  // Profundidad base
+        inputWidth: 60,
+        // *** NUEVO: Anchos para capas de AttentionNet Manual ***
+        attentionWeightWidth: 60, // Para alpha (4D)
+        weightedFeatWidth: 60,    // Para x' (4D)
+        branchWidth: 200,         // Para ramas h1, h2 (64D)
+        concatWidth: 300,         // Para h concatenado (128D)
+        outputWidth: 50,          // Para salida (3 Cls)
+        // Neuron cloud params (iguales)
+        neuronRadius: 3.0, neuronOpacityMin: 0.4, neuronOpacityMax: 1.0,
+        neuronPerspectiveScaleMin: 0.7, neuronPerspectiveScaleMax: 1.1,
+        neuronGridJitterFactor: 0.15, neuronOpacityHighlightFactor: 0.3,
+        // Layout params
+        horizontalSpacing: 160, // Espaciado entre elementos principales
+        startX: 150,
+        baseY: 400, // Ajustado Y base para centrar con ramas
+        // *** NUEVO: Espaciado vertical para ramas ***
+        branchVerticalSpacing: 180, // Distancia vertical entre centros de h1 y h2
+        opRadius: 22, // Radio para círculos de operación (⊙, [;])
+        opSpacing: 60, // Espacio horizontal alrededor de los símbolos de operación
+        labelYOffset: 70,
+        activationYOffset: 70,
+        formulaYOffset: 18,
+        // Schematic connections (iguales)
+        schematicConnCount: 30, connectionOpacityMin: 0.3, connectionOpacityMax: 0.8,
+        connectionWidthMin: 0.7, connectionWidthMax: 1.1,
+     };
+
+    // --- Network Specification (AttentionNet Manual) ---
+    const networkSpecAttManual = [
+        // Input
+        { id: 'input', type: 'input', units: 4, label: 'Input', formula: "x",
+          layoutW: config.inputWidth, layoutH: config.layerHeight * 0.8, layoutD: config.layerDepth * 0.5 },
+        // Attention Calculation
+        { id: 'alpha', type: 'attention_weights', units: 4, label: 'Attention α', formula: "α=σ(Wₐx+bₐ)",
+          layoutW: config.attentionWeightWidth, layoutH: config.layerHeight * 0.6, layoutD: config.layerDepth * 0.4 },
+        // Operation Placeholder 1: Multiply
+        { id: 'multiply_op', type: 'elementwise_op', symbol: '⊙', label: 'ElemWise Mult', opClass: 'op_multiply' },
+        // Weighted Features
+        { id: 'x_prime', type: 'weighted_features', units: 4, label: "Weighted Feats x'", formula: "x'=α⊙x",
+          layoutW: config.weightedFeatWidth, layoutH: config.layerHeight * 0.8, layoutD: config.layerDepth * 0.5 },
+        // Parallel Branches (Marked with branch property)
+        { id: 'branch1', type: 'dense_branch', branch_id: 1, units: 64, activation: 'ϕ', label: 'Branch 1', formula: "h₁=ϕ(W₁x'+b₁)",
+          layoutW: config.branchWidth, layoutH: config.layerHeight, layoutD: config.layerDepth },
+        { id: 'branch2', type: 'dense_branch', branch_id: 2, units: 64, activation: 'ϕ', label: 'Branch 2', formula: "h₂=ϕ(W₂x'+b₂)",
+          layoutW: config.branchWidth, layoutH: config.layerHeight, layoutD: config.layerDepth },
+        // Operation Placeholder 2: Concatenate
+        { id: 'concat_op', type: 'concatenation_op', symbol: '[ ; ]', label: 'Concat', opClass: 'op_concat' },
+        // Concatenated Features
+        { id: 'h_concat', type: 'dense', units: 128, label: 'Concatenated Features', formula: "h=[h₁;h₂]",
+          layoutW: config.concatWidth, layoutH: config.layerHeight, layoutD: config.layerDepth },
+        // Output
+        { id: 'output', type: 'output', units: 3, activation: 'σ', label: 'Output', formula: "ŷ=σ(W'h+b')",
+          layoutW: config.outputWidth, layoutH: config.layerHeight * 0.8, layoutD: config.layerDepth * 0.5 }
+    ];
+
+    // --- D3 Setup ---
+    const svg = d3.select("body").append("svg")
+        .attr("width", config.svgWidth).attr("height", config.svgHeight)
+        .style("min-width", `${config.svgWidth}px`);
+    const defs = svg.append("defs");
+    const diagramGroup = svg.append("g").attr("id", "diagramGroup");
+
+    // --- Defs Setup Function (Incluye marker para skip, aunque no se use aquí) ---
+    function setupDefs() {
+        const gradNeuron=defs.append("radialGradient").attr("id","gradNeuron");gradNeuron.append("stop").attr("offset","0%").style("stop-color","#eee");gradNeuron.append("stop").attr("offset","100%").style("stop-color","#777");defs.append("marker").attr("id","arrow").attr("viewBox","0 0 10 10").attr("refX",8).attr("refY",5).attr("markerWidth",7).attr("markerHeight",7).attr("orient","auto-start-reverse").append("path").attr("d","M 0 0 L 10 5 L 0 10 z").attr("fill","#333");defs.append("marker").attr("id","arrowSkip").attr("viewBox","0 0 10 10").attr("refX",8).attr("refY",5).attr("markerWidth",7).attr("markerHeight",7).attr("orient","auto-start-reverse").append("path").attr("d","M 0 0 L 10 5 L 0 10 z").attr("fill","#4CAF50");const filter=defs.append("filter").attr("id","dropShadow").attr("x","-30%").attr("y","-30%").attr("width","160%").attr("height","160%");filter.append("feGaussianBlur").attr("in","SourceAlpha").attr("stdDeviation",3).attr("result","blur");filter.append("feOffset").attr("dy",2).attr("dx",2).attr("result","offsetBlur");const feTransfer=filter.append("feComponentTransfer").attr("in","offsetBlur").attr("result","transferredBlur");feTransfer.append("feFuncA").attr("type","linear").attr("slope",0.4);const feMerge=filter.append("feMerge");feMerge.append("feMergeNode").attr("in","transferredBlur");feMerge.append("feMergeNode").attr("in","SourceGraphic");
+    }
+
+    // --- Layout Calculation Function (REFACTORIZADA para AttentionNet) ---
+    function calculateLayout(networkSpec) {
+        console.log("Calculating layout V20 (AttentionNet Manual)...");
+        let currentX = config.startX;
+        const layoutData = JSON.parse(JSON.stringify(networkSpec)); // Deep copy
+        let branchStartX = 0; // Para guardar dónde empiezan las ramas
+        let branchEndX = 0;   // Para guardar dónde terminan las ramas (en X)
+        let branchNodes = []; // Para guardar nodos de rama
+
+        layoutData.forEach((d, i) => {
+            let prevNode = i > 0 ? layoutData[i - 1] : null;
+            let spacing = config.horizontalSpacing;
+
+            // Calcular posición X
+            if (d.type === 'elementwise_op' || d.type === 'concatenation_op') {
+                // Los símbolos de operación se colocan entre capas
+                 d.x_center = (prevNode ? prevNode.logical_x_end : currentX) + config.opSpacing + config.opRadius;
+                 d.y_center = config.baseY; // Centrado verticalmente por defecto
+                 d.logical_x_start = d.x_center - config.opRadius;
+                 d.logical_x_end = d.x_center + config.opRadius;
+                 currentX = d.logical_x_end + config.opSpacing; // Avanza X para la siguiente capa
+            } else if (d.type === 'dense_branch') {
+                if (branchStartX === 0) { // Primera rama encontrada
+                    branchStartX = currentX + spacing + (d.layoutW / 2); // Calcular X común para la columna de ramas
+                    currentX = branchStartX; // El centro X de las ramas es el nuevo currentX
+                    branchNodes = []; // Reset branch nodes list
+                }
+                d.x_center = branchStartX; // Todas las ramas en la misma X
+                // Calcular Y verticalmente espaciada
+                if (d.branch_id === 1) {
+                     d.y_center = config.baseY - config.branchVerticalSpacing / 2;
+                } else if (d.branch_id === 2) {
+                     d.y_center = config.baseY + config.branchVerticalSpacing / 2;
+                } else { // Default para más ramas (si se añaden)
+                     d.y_center = config.baseY + (d.branch_id - 1.5) * config.branchVerticalSpacing;
+                }
+                d.logical_x_start = d.x_center - d.layoutW / 2;
+                d.logical_x_end = d.x_center + d.layoutW / 2;
+                branchEndX = Math.max(branchEndX, d.logical_x_end); // La columna termina donde termina la rama más ancha
+                branchNodes.push(d); // Guardar referencia al nodo de rama
+            } else {
+                // Capas normales (Input, Attention, Dense, Output)
+                if (prevNode && prevNode.type === 'dense_branch') {
+                     // Si lo anterior fue una rama, el siguiente elemento (probablemente concat op) empieza después de la columna de ramas
+                     currentX = branchEndX; // X empieza donde terminaron las ramas
+                     // Ajuste especial para el símbolo de concatenación, centrado verticalmente entre las ramas
+                     if (d.type === 'concatenation_op') {
+                         d.x_center = currentX + config.opSpacing + config.opRadius;
+                         d.y_center = config.baseY; // Centrado entre ramas
+                         d.logical_x_start = d.x_center - config.opRadius;
+                         d.logical_x_end = d.x_center + config.opRadius;
+                         currentX = d.logical_x_end + config.opSpacing;
+                     } else { // El bloque concatenado 'h_concat'
+                         d.x_center = currentX + spacing + d.layoutW / 2;
+                         d.y_center = config.baseY; // Centrado verticalmente
+                         d.logical_x_start = d.x_center - d.layoutW / 2;
+                         d.logical_x_end = d.x_center + d.layoutW / 2;
+                         currentX = d.logical_x_end; // Actualiza currentX para el siguiente elemento (output)
+                     }
+                } else {
+                    // Posicionamiento secuencial normal
+                     d.x_center = currentX + (prevNode && prevNode.type.includes('_op') ? 0 : spacing) + d.layoutW / 2; // No añadir spacing extra después de un op
+                     d.y_center = config.baseY;
+                     d.logical_x_start = d.x_center - d.layoutW / 2;
+                     d.logical_x_end = d.x_center + d.layoutW / 2;
+                     currentX = d.logical_x_end; // Actualiza currentX
+                }
+                 // Ajuste para alpha (ligeramente arriba) y x_prime (ligeramente abajo) de la línea central? Opcional.
+                if (d.id === 'alpha') d.y_center -= 20;
+                if (d.id === 'x_prime') d.y_center += 20; // Para separarlos visualmente del input
+                if (d.id === 'multiply_op') { // Centrar op entre alpha y x_prime
+                     const alphaNode = layoutData.find(n => n.id === 'alpha');
+                     const inputNode = layoutData.find(n => n.id === 'input'); // Necesitamos input también
+                     if (alphaNode && inputNode) {
+                          d.y_center = config.baseY; // Centrado en Y
+                          // Puntos de conexión para el símbolo de multiplicación
+                          d.input_coords = [{x: inputNode.logical_x_end, y: inputNode.y_center}, {x: alphaNode.logical_x_end, y: alphaNode.y_center}];
+                          d.output_coord = {x: d.logical_x_end, y: d.y_center};
+                     }
+                 }
+                if(d.id === 'concat_op'){
+                     // Puntos de conexión para el símbolo de concatenación
+                     d.input_coords = branchNodes.map(bn => ({x: bn.logical_x_end, y: bn.y_center}));
+                     d.output_coord = {x: d.logical_x_end, y: d.y_center};
+                     d.y_center = config.baseY; // Asegurar centrado
+                }
+            }
+
+            // Calcular Bbox (siempre basado en x_center, y_center, layoutW/H/D)
+             if (d.layoutW && d.layoutH && d.layoutD) {
+                 d.bbox = {
+                     x_start: d.x_center - d.layoutW / 2, x_end: d.x_center + d.layoutW / 2,
+                     y_start: d.y_center - d.layoutH / 2, y_end: d.y_center + d.layoutH / 2,
+                     z_start: -d.layoutD / 2, z_end: d.layoutD / 2
+                 };
+             } else if (d.type.includes('_op')) { // Bbox pequeño para operaciones
+                 d.bbox = { // Usar opRadius para el bbox del símbolo
+                     x_start: d.x_center - config.opRadius, x_end: d.x_center + config.opRadius,
+                     y_start: d.y_center - config.opRadius, y_end: d.y_center + config.opRadius,
+                     z_start: 0, z_end: 0
+                 };
+             } else {
+                 console.warn(`Layer ${d.id} missing layout dimensions.`);
+                 d.bbox = {x_start: d.x_center, x_end: d.x_center, y_start: d.y_center, y_end: d.y_center, z_start: 0, z_end: 0};
+             }
+
+
+            // Debug log
+             // console.log(`Layer ${d.id} (${d.type}): Center=(${d.x_center?.toFixed(1)}, ${d.y_center?.toFixed(1)}), Logical X=[${d.logical_x_start?.toFixed(1)}, ${d.logical_x_end?.toFixed(1)}]`);
+        });
+
+        const finalElement = layoutData[layoutData.length - 1];
+        const requiredWidth = (finalElement.logical_x_end || currentX) + config.startX; // Usa la X final calculada
+        console.log(`Layout V20 (AttManual) finished. Final logical end X: ${finalElement.logical_x_end?.toFixed(1)}. Est required width: ~${requiredWidth.toFixed(1)} (SVG Width: ${config.svgWidth})`);
+
+        if (requiredWidth > config.svgWidth) {
+            console.warn(`CALCULATED REQUIRED WIDTH (${requiredWidth.toFixed(1)}) MAY EXCEED SVG WIDTH (${config.svgWidth})! Adjust config.svgWidth or spacing.`);
+        }
+        // console.log("Final Layout Data:", layoutData); // Log final data structure
+        return layoutData;
+    }
+
+    // --- Sphere Cloud Drawing Function (Sin cambios) ---
+    function drawSphereCloud(group, layerData, baseUnits = Infinity) {
+        // ... (código idéntico al de V19/ResNet Hypertuned) ...
+        // Asegurarse de que maneja bien capas sin bbox (como ops) devolviendo array vacío o no siendo llamada para ellas.
+        if (!layerData || !layerData.bbox || !layerData.units || layerData.units <= 0) {
+             // console.log(`Skipping sphere cloud for ${layerData?.id} - no units or bbox.`);
+             return [];
+        }
+        const{units,bbox,id}=layerData;const{x_start,x_end,y_start,y_end,z_start,z_end}=bbox;const w=x_end-x_start;const h=y_end-y_start;const d=z_end-z_start;const points=[];const perspectiveScale=d3.scaleLinear().domain([z_start,z_end]).range([config.neuronPerspectiveScaleMax,config.neuronPerspectiveScaleMin]);const opacityScale=d3.scaleLinear().domain([z_start,z_end]).range([config.neuronOpacityMax,config.neuronOpacityMin]);let numZ=4;if(units<10)numZ=Math.max(1,Math.min(units,3));if(w<=0||h<=0||d<=0){console.warn(`Layer ${id}: Invalid dimensions W=${w}, H=${h}, D=${d}. Cannot draw spheres.`);return[];}let unitsPerZ=Math.ceil(units/numZ);let gridRatio=Math.sqrt(w/h)||1;let numY=Math.max(1,Math.round(Math.sqrt(unitsPerZ/gridRatio)));let numX=Math.max(1,Math.ceil(unitsPerZ/numY));numX=Math.max(numX,1);numY=Math.max(numY,1);let count=0;const avgSpacingX=numX>1?w/(numX-1):w;const avgSpacingY=numY>1?h/(numY-1):h;const avgSpacingZ=numZ>1?d/(numZ-1):d;const jitterX=avgSpacingX*config.neuronGridJitterFactor;const jitterY=avgSpacingY*config.neuronGridJitterFactor;const jitterZ=avgSpacingZ*config.neuronGridJitterFactor;for(let iz=0;iz<numZ&&count<units;iz++){const z_base=z_start+(numZ>1?iz*d/(numZ-1):d/2);const remainingUnits=units-count;let currentUnitsPerZ=Math.min(remainingUnits,Math.ceil(units/numZ));let currentNumY=Math.max(1,Math.round(Math.sqrt(currentUnitsPerZ/gridRatio)));let currentNumX=Math.max(1,Math.ceil(currentUnitsPerZ/currentNumY));currentUnitsPerZ=Math.min(remainingUnits,currentNumX*currentNumY);let layerCount=0;for(let iy=0;iy<currentNumY&&layerCount<currentUnitsPerZ;iy++){const y_base=y_start+(currentNumY>1?iy*h/(currentNumY-1):h/2);for(let ix=0;ix<currentNumX&&layerCount<currentUnitsPerZ;ix++){if(count>=units)break;const x_base=x_start+(currentNumX>1?ix*w/(currentNumX-1):w/2);const x_jitter=x_base+(Math.random()-0.5)*jitterX;const y_jitter=y_base+(Math.random()-0.5)*jitterY;const z_jitter=z_base+(Math.random()-0.5)*jitterZ;const z=Math.max(z_start,Math.min(z_end,z_jitter));const isBaseUnit=count<baseUnits;const finalOpacity=isBaseUnit?opacityScale(z):opacityScale(z)*config.neuronOpacityHighlightFactor;const finalScale=perspectiveScale(z);if(!isNaN(x_jitter)&&!isNaN(y_jitter)&&!isNaN(z)){points.push({x:x_jitter+z*0.05,y:y_jitter-z*0.05,z:z,scale:finalScale,opacity:finalOpacity,isBase:isBaseUnit});count++;layerCount++;}else{console.warn(`Layer ${id}: NaN coordinate detected during point generation (ix=${ix}, iy=${iy}, iz=${iz}). Skipping point.`);}}if(count>=units)break;}if(count>=units)break;}while(points.length>units){points.pop();}if(points.length!==units){console.warn(`Layer ${id}: Point count mismatch ${points.length}/${units}. Grid estimation might be imperfect.`);}points.sort((a,b)=>a.z-b.z);const sphereGroup=group.append("g").attr("id",`${id}-spheres`);try{sphereGroup.selectAll(`.neuron-sphere-${id}`).data(points).enter().append("circle").attr("class",`neuron-sphere neuron-sphere-${id}`).attr("fill","url(#gradNeuron)").attr("cx",p=>p.x).attr("cy",p=>p.y).attr("r",p=>Math.max(0.5,config.neuronRadius*p.scale)).attr("opacity",p=>Math.max(0.1,p.opacity));}catch(error){console.error(`Error drawing spheres for layer ${id}:`,error);}return points;
+    }
+
+    // --- Schematic Connection Drawing Function (Sin cambios lógicos) ---
+    function drawSchematicConnections(group, prevLayerData, currentLayerData, prevPoints, currentPoints) {
+        // ... (código idéntico al de V19/ResNet Hypertuned) ...
+        if(!prevPoints||!currentPoints||prevPoints.length===0||currentPoints.length===0){return;};const connGroup=group.append("g").attr("id",`${currentLayerData.id}-connections`).lower();const numConns=Math.min(config.schematicConnCount,prevPoints.length,currentPoints.length);const zThresholdPrev=prevLayerData.bbox.z_start+(prevLayerData.bbox.z_end-prevLayerData.bbox.z_start)*0.7;const zThresholdCurr=currentLayerData.bbox.z_start+(currentLayerData.bbox.z_end-currentLayerData.bbox.z_start)*0.3;let sourcePoints=prevPoints.filter(p=>p.z>=zThresholdPrev);let targetPoints=currentPoints.filter(p=>p.z<=zThresholdCurr);if(sourcePoints.length===0)sourcePoints=prevPoints.slice(-Math.min(prevPoints.length,20));if(targetPoints.length===0)targetPoints=currentPoints.slice(0,Math.min(currentPoints.length,20));if(sourcePoints.length===0||targetPoints.length===0){return;}const centerEmphasisScale=d3.scaleLinear().domain([0,config.layerHeight/2]).range([1,0.5]).clamp(true);for(let i=0;i<numConns;i++){const p1=sourcePoints[Math.floor(Math.random()*sourcePoints.length)];const p2=targetPoints[Math.floor(Math.random()*targetPoints.length)];if(isFinite(p1.x)&&isFinite(p1.y)&&isFinite(p2.x)&&isFinite(p2.y)){const midX=(p1.x+p2.x)/2;const midY=(p1.y+p2.y)/2;const dx=p2.x-p1.x;const dy=p2.y-p1.y;const length=Math.max(1,Math.sqrt(dx*dx+dy*dy));const curveIntensity=length>50?0.15:0.1;const offsetX=-dy/length*length*curveIntensity;const offsetY=dx/length*length*curveIntensity;const controlX=midX+offsetX;const controlY=midY+offsetY;const distFromCenter=Math.abs(midY-config.baseY);const emphasis=centerEmphasisScale(distFromCenter);const strokeOpacity=config.connectionOpacityMin+(config.connectionOpacityMax-config.connectionOpacityMin)*emphasis;const strokeWidth=config.connectionWidthMin+(config.connectionWidthMax-config.connectionWidthMin)*emphasis;connGroup.append("path").attr("class","schematic-connection").attr("d",`M ${p1.x},${p1.y} Q ${controlX},${controlY} ${p2.x},${p2.y}`).style("stroke-opacity",strokeOpacity).style("stroke-width",strokeWidth);}}
+
+    }
+
+    // --- Label & Formula Drawing Function (Adaptada) ---
+    function drawLabelsAndFormulas(group, d) {
+        let labelX = d.x_center;
+        let formulaX = d.x_center;
+        let labelYBase = d.bbox?.y_start ?? d.y_center; // Base Y for labels (top of bbox or center)
+        let dimLabelY = (d.bbox?.y_end ?? d.y_center) + config.labelYOffset; // Y for dimension label (below bbox)
+        let formulaY = dimLabelY + config.formulaYOffset; // Y for formula label
+
+        let dimUnits = "";
+        if (d.units) {
+             dimUnits = d.units === 3 ? "(3 Cls)" : `(${d.units} Units)`;
+             if (d.type === 'dense_branch') dimUnits = `(${d.units}D)`; // Shorter for branches
+        }
+        let mainLabel = d.label;
+
+        // --- Posicionamiento especial para elementos de AttentionNet ---
+         if (d.id === 'alpha') {
+             labelYBase -= 40; // Mover etiqueta alpha más arriba
+             dimLabelY = d.bbox.y_end + 25; // Dimensión más cerca
+             formulaY = dimLabelY + config.formulaYOffset;
+         } else if (d.id === 'x_prime') {
+             labelYBase += 0; // Etiqueta x' en posición normal superior
+             dimLabelY = d.bbox.y_end + 25;
+             formulaY = dimLabelY + config.formulaYOffset;
+         } else if (d.type === 'dense_branch') {
+             labelYBase = d.y_center; // Centrar verticalmente etiqueta de rama
+             dimLabelY = d.y_center + d.layoutH / 2 + 25; // Dimensión debajo de la nube de la rama
+             formulaY = dimLabelY + config.formulaYOffset;
+         } else if (d.type.includes('_op')) {
+             // Etiquetas para operaciones (debajo del símbolo)
+             labelYBase = d.y_center + config.opRadius + 12;
+             dimLabelY = labelYBase + 5; // Sin dim label para ops
+             formulaY = labelYBase + 5; // Sin formula label para ops
+             dimUnits = ""; // No mostrar unidades para ops
+             mainLabel = d.label; // Usar el label del op ('ElemWise Mult', 'Concat')
+              group.append("text").attr("class", "op_label " + (d.opClass || '')) // Añadir clase específica de op
+                 .attr("x", d.x_center)
+                 .attr("y", labelYBase)
+                 .text(mainLabel);
+             mainLabel = ""; // Ya dibujamos la etiqueta del op
+         } else if (d.id === 'h_concat') {
+             labelYBase = d.bbox.y_start - config.activationYOffset; // Etiqueta arriba
+         }
+
+
+        // --- Dibujar Etiquetas Comunes ---
+        // Main Label (if not drawn as op label)
+        if (mainLabel) {
+            group.append("text").attr("class","label")
+                .attr("x", labelX).attr("y", labelYBase)
+                .text(mainLabel);
+        }
+        // Activation (Below Main Label or near top)
+        if (d.activation) {
+            group.append("text").attr("class","activation")
+                 .attr("x", labelX).attr("y", labelYBase + 18) // Debajo de main label
+                 .text(d.activation);
+        }
+        // Dimension Label (if applicable)
+        if (dimUnits) {
+             group.append("text").attr("class","dim_label")
+                 .attr("x", labelX).attr("y", dimLabelY)
+                 .text(dimUnits);
+        }
+        // Formula Label (if applicable)
+        if (d.formula) {
+             group.append("text").attr("class", "formula-label")
+                 .attr("x", formulaX).attr("y", formulaY)
+                 .text(d.formula);
+         }
+    }
+
+    // --- Connector Drawing Function (REFACTORIZADA para AttentionNet) ---
+    function drawConnectors(svg, layoutData) {
+        console.log("Drawing connectors V20...");
+        const getNode = (id) => layoutData.find(n => n.id === id);
+
+        // Helper to draw a line between two nodes/points
+        const drawLine = (source, target, cssClass = "data_flow") => {
+             if (!source || !target) {
+                 console.warn(`Cannot draw line: Missing source or target. Src: ${source?.id}, Tgt: ${target?.id}`);
+                 return;
+             }
+             // Use logical end/start for standard layers, center for ops
+             let x1 = source.logical_x_end ?? source.x_center;
+             let y1 = source.y_center;
+             let x2 = target.logical_x_start ?? target.x_center;
+             let y2 = target.y_center;
+
+             // Adjust for operation symbols (target edge)
+             if (target.type?.includes('_op')) {
+                 x2 = target.x_center - config.opRadius;
+                 // Handle multiple inputs to ops
+                 if (target.id === 'multiply_op') {
+                     // Need specific handling if source is input or alpha
+                     if (source.id === 'input') y2 = target.y_center - 5; // Slightly above center
+                     if (source.id === 'alpha') y2 = target.y_center + 5; // Slightly below center
+                 } else if (target.id === 'concat_op') {
+                      // Adjust Y based on source branch
+                      if (source.type === 'dense_branch') {
+                           y2 = target.y_center + (source.y_center < target.y_center ? -5 : 5); // Angle towards center
+                      }
+                 }
+             }
+             // Adjust for operation symbols (source edge)
+             if (source.type?.includes('_op')) {
+                  x1 = source.x_center + config.opRadius;
+                  y1 = source.y_center;
+             }
+             // Adjust start point if previous was a branch (for concat op input)
+             if(source.type === 'dense_branch' && target.id === 'concat_op') {
+                  x1 = source.logical_x_end; // End of branch cloud
+                  y1 = source.y_center;
+             }
+             // Adjust end point if target is a branch (coming from x_prime or op)
+             if(target.type === 'dense_branch' && (source.id === 'x_prime' || source.type?.includes('_op'))) {
+                  x2 = target.logical_x_start; // Start of branch cloud
+                  y2 = target.y_center;
+             }
+
+
+             if (isFinite(x1) && isFinite(y1) && isFinite(x2) && isFinite(y2)) {
+                 svg.append("line").attr("class", cssClass)
+                     .attr("x1", x1).attr("y1", y1).attr("x2", x2).attr("y2", y2);
+             } else {
+                 console.warn(`Skipping connector draw due to invalid coords: (${x1},${y1}) -> (${x2},${y2}) from ${source.id} to ${target.id}`);
+             }
+        };
+
+        try {
+            // 1. Input -> Alpha
+            drawLine(getNode('input'), getNode('alpha'));
+            // 2. Input -> Multiply Op
+            drawLine(getNode('input'), getNode('multiply_op'));
+            // 3. Alpha -> Multiply Op
+            drawLine(getNode('alpha'), getNode('multiply_op'));
+            // 4. Multiply Op -> x_prime
+            drawLine(getNode('multiply_op'), getNode('x_prime'));
+            // 5. x_prime -> Branch 1
+            drawLine(getNode('x_prime'), getNode('branch1'));
+            // 6. x_prime -> Branch 2
+            drawLine(getNode('x_prime'), getNode('branch2'));
+            // 7. Branch 1 -> Concat Op
+            drawLine(getNode('branch1'), getNode('concat_op'));
+            // 8. Branch 2 -> Concat Op
+            drawLine(getNode('branch2'), getNode('concat_op'));
+            // 9. Concat Op -> h_concat
+            drawLine(getNode('concat_op'), getNode('h_concat'));
+            // 10. h_concat -> Output
+            drawLine(getNode('h_concat'), getNode('output'));
+
+        } catch (error) {
+            console.error("Error drawing connectors:", error);
+        }
+    }
+
+    // --- Main Drawing Execution (Adaptada) ---
+    function renderNetwork(networkSpec) {
+        try {
+            console.log("Rendering network V20 (AttentionNet Manual)...");
+            setupDefs();
+            const layout = calculateLayout(networkSpec);
+            const layerPoints = {}; // Store sphere points
+
+            diagramGroup.selectAll("*").remove(); // Clear previous
+
+            // Group for schematic connections (behind spheres)
+            const connectionGroup = diagramGroup.append("g").attr("id", "connectionsGroup").lower();
+
+            // Create groups for each layer/op
+            const layerGroups = diagramGroup.selectAll(".layerOrOpGroup")
+                .data(layout)
+                .enter()
+                .append("g")
+                 // Add branch-group class for potential styling
+                .attr("class", d => `layerOrOpGroup filter-shadow ${d.type === 'dense_branch' ? 'branch-group' : ''}`)
+                .attr("id", d => `group_${d.id}`);
+
+            // Draw sphere clouds OR operation symbols
+            layerGroups.each(function(d) {
+                const group = d3.select(this);
+                if (d.type.includes('_op')) {
+                    // Draw Operation Symbol
+                    group.append("circle").attr("class", `op_symbol_circle ${d.opClass || ''}`)
+                        .attr("cx", d.x_center).attr("cy", d.y_center).attr("r", config.opRadius);
+                    group.append("text").attr("class", `op_symbol_text ${d.opClass || ''}`)
+                        .attr("x", d.x_center).attr("y", d.y_center).text(d.symbol);
+                } else if (d.units > 0) {
+                    // Draw Sphere Cloud for layers with units
+                    layerPoints[d.id] = drawSphereCloud(group, d);
+                }
+            });
+
+            // Draw schematic connections (using stored points)
+            // Needs careful pairing based on AttentionNet structure
+            try {
+                 const connectSchematic = (id1, id2) => {
+                     const node1 = layout.find(n => n.id === id1);
+                     const node2 = layout.find(n => n.id === id2);
+                     if (node1 && node2 && layerPoints[id1] && layerPoints[id2]) {
+                          drawSchematicConnections(connectionGroup, node1, node2, layerPoints[id1], layerPoints[id2]);
+                     }
+                 };
+                 // Connect layers that have sphere clouds
+                 connectSchematic('input', 'alpha');
+                 // Can't directly connect input/alpha to x_prime via schematic easily due to op.
+                 // Connect x_prime to branches
+                 connectSchematic('x_prime', 'branch1');
+                 connectSchematic('x_prime', 'branch2');
+                 // Connect branches to h_concat
+                 connectSchematic('branch1', 'h_concat');
+                 connectSchematic('branch2', 'h_concat');
+                 // Connect h_concat to output
+                 connectSchematic('h_concat', 'output');
+            } catch (error) {
+                 console.error("Error drawing schematic connections:", error);
+            }
+
+
+            // Draw labels and formulas on top
+            layerGroups.each(function(d) {
+                drawLabelsAndFormulas(d3.select(this), d);
+            });
+
+            // Draw main connectors (arrows) on the very top
+            drawConnectors(diagramGroup, layout);
+
+            console.log("Rendering finished V20 (AttentionNet Manual).");
+
+        } catch (error) {
+            console.error("!!! Critical Error during Rendering !!!", error);
+            svg.append("text").attr("x", 10).attr("y", 50).attr("fill", "red")
+                .text(`Error rendering diagram: ${error.message}. Check console (F12).`)
+                .style("font-family", "monospace").style("font-size", "12px");
+        }
+    }
+
+    // --- Render the AttentionNet Manual Diagram ---
+    renderNetwork(networkSpecAttManual);
+    console.log("Initial render call complete V20 - AttentionNet Manual.");
+
+</script>
+
+</body>
+</html>

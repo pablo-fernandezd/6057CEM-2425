@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ResNet (Hypertuned 192 Units) - V19 Formulas</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        /* Estilos sin cambios respecto a V19 original */
+        html, body { width: 100%; margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', 'Lato', Arial, sans-serif; background-color: #f4f4f4; display: flex; justify-content: flex-start; align-items: flex-start; min-height: 100vh; padding: 20px; overflow-x: auto;}
+        svg { background-color: #ffffff; display: block; margin: 10px; /* Ancho mínimo gestionado por config */ max-width: none; border: 1px solid #ddd; }
+        .neuron-sphere { stroke: #444; stroke-width: 0.6; }
+        .label { font-size: 15px; font-weight: 700; text-anchor: middle; fill: #222; }
+        .dim_label { font-size: 12px; font-weight: 400; text-anchor: middle; fill: #555555; }
+        .op_symbol_circle { stroke: #007BFF; stroke-width: 3; fill: white; filter: url(#dropShadow); }
+        .op_symbol_text { font-size: 26px; font-weight: 700; text-anchor: middle; dominant-baseline: central; fill: #007BFF; }
+        .op_label { font-size: 10px; font-style: italic; text-anchor: middle; fill: #007BFF; }
+        .activation { font-size: 12px; font-style: italic; text-anchor: middle; fill: #9B59B6; }
+        .data_flow { stroke: #333; stroke-width: 3.5; fill: none; marker-end: url(#arrow); }
+        .skip_connection { stroke: #4CAF50; stroke-width: 3.5; fill: none; marker-end: url(#arrowSkip); }
+        .resblock_label { font-size: 14px; font-weight: bold; text-anchor: middle; fill: #555; }
+        .schematic-connection { stroke: #a0c0ff; fill:none; /* Opacity/width set dynamically */ }
+        .filter-shadow { filter: url(#dropShadow); }
+        .formula-label {
+            font-family: 'Consolas', 'Courier New', monospace; /* Monospace for formula look */
+            font-size: 10px;
+            fill: #666;
+            text-anchor: middle;
+        }
+    </style>
+</head>
+<body>
+<script>
+    console.log("--- Diagram Generation Start V19 (Hypertuned 192 Units) ---");
+
+    // --- Configuration (MODIFIED for Hypertuned) ---
+    const config = {
+        // *** CAMBIO: Ancho SVG aumentado ***
+        svgWidth: 3800, // Increased width to accommodate wider layers
+        svgHeight: 700,
+        layerHeight: 100,
+        layerDepth: 60,
+        inputWidth: 60,
+        // *** CAMBIO: Ancho base para 128u (referencia) ***
+        hiddenWidth: 300, // Base width for 128 units (reference)
+        // *** NUEVO: Ancho específico para 192u ***
+        hiddenWidthHyper: 450, // Width for 192 units (e.g., 300 * 192/128)
+        outputWidth: 50,
+        neuronRadius: 3.0,
+        neuronOpacityMin: 0.4,
+        neuronOpacityMax: 1.0,
+        neuronPerspectiveScaleMin: 0.7,
+        neuronPerspectiveScaleMax: 1.1,
+        neuronGridJitterFactor: 0.15,
+        neuronOpacityHighlightFactor: 0.3, // Potentially adjust if needed for visual clarity
+        // *** CAMBIO: Espaciado horizontal aumentado ligeramente ***
+        horizontalSpacing: 200, // Slightly increased spacing
+        startX: 200,
+        baseY: 350,
+        resInternalSpacing: 80,
+        opRadius: 22,
+        labelYOffset: 70,
+        activationYOffset: 70,
+        resBlockLabelYOffset: 100,
+        skipArcHeight: 180, // May need adjustment if layers are much taller/shorter
+        schematicConnCount: 30,
+        connectionOpacityMin: 0.3,
+        connectionOpacityMax: 0.8,
+        connectionWidthMin: 0.7,
+        connectionWidthMax: 1.1,
+        formulaYOffset: 18
+     };
+
+    // --- Network Specification (MODIFIED for ResNet Hypertuned) ---
+    // *** CAMBIO: Usando networkSpecHyper ***
+    const networkSpecHyper = [
+        { id: 'input', type: 'input', units: 4, label: 'Input', formula: "x", layoutW: config.inputWidth, layoutH: config.layerHeight * 0.8, layoutD: config.layerDepth * 0.5 },
+        // *** CAMBIO: units=192, layoutW=hiddenWidthHyper ***
+        { id: 'proj', type: 'dense', units: 192, activation: 'ϕ', label: 'Initial Projection', formula: "h(0)=ϕ(W(0)x+b(0))", layoutW: config.hiddenWidthHyper, layoutH: config.layerHeight, layoutD: config.layerDepth },
+        // *** CAMBIO: units=192, layoutW=hiddenWidthHyper ***
+        { id: 'res1', type: 'resblock', units: 192, activation: 'ϕ', blockLabel: 'ResBlock 1', internalLabel: 'Linear', formula: "z(1)=ϕ(W(1)h(0)+b(1))", resFormula: "h(1)=h(0)+z(1)", layoutW: config.hiddenWidthHyper, layoutH: config.layerHeight, layoutD: config.layerDepth },
+        // *** CAMBIO: units=192, layoutW=hiddenWidthHyper ***
+        { id: 'res2', type: 'resblock', units: 192, activation: 'ϕ', blockLabel: 'ResBlock 2', internalLabel: 'Linear', formula: "z(2)=ϕ(W(2)h(1)+b(2))", resFormula: "h(2)=h(1)+z(2)", layoutW: config.hiddenWidthHyper, layoutH: config.layerHeight, layoutD: config.layerDepth },
+        // *** CAMBIO: units=192, layoutW=hiddenWidthHyper ***
+        { id: 'res3', type: 'resblock', units: 192, activation: 'ϕ', blockLabel: 'ResBlock 3', internalLabel: 'Linear', formula: "z(3)=ϕ(W(3)h(2)+b(3))", resFormula: "h(3)=h(2)+z(3)", layoutW: config.hiddenWidthHyper, layoutH: config.layerHeight, layoutD: config.layerDepth },
+        { id: 'output', type: 'output', units: 3, activation: 'σ', label: 'Output', formula: "ŷ=σ(Wout h(3)+bout)", layoutW: config.outputWidth, layoutH: config.layerHeight * 0.8, layoutD: config.layerDepth * 0.5 }
+    ];
+
+    // --- D3 Setup ---
+    const svg = d3.select("body").append("svg")
+        // *** CAMBIO: Usando config.svgWidth ***
+        .attr("width", config.svgWidth).attr("height", config.svgHeight)
+        .style("min-width", `${config.svgWidth}px`); // Ensure body scroll works
+    const defs = svg.append("defs");
+    const diagramGroup = svg.append("g").attr("id", "diagramGroup");
+
+    // --- Defs Setup Function (Sin cambios) ---
+    function setupDefs() {
+        // ... (código idéntico al de V19 original) ...
+        const gradNeuron=defs.append("radialGradient").attr("id","gradNeuron");gradNeuron.append("stop").attr("offset","0%").style("stop-color","#eee");gradNeuron.append("stop").attr("offset","100%").style("stop-color","#777");defs.append("marker").attr("id","arrow").attr("viewBox","0 0 10 10").attr("refX",8).attr("refY",5).attr("markerWidth",7).attr("markerHeight",7).attr("orient","auto-start-reverse").append("path").attr("d","M 0 0 L 10 5 L 0 10 z").attr("fill","#333");defs.append("marker").attr("id","arrowSkip").attr("viewBox","0 0 10 10").attr("refX",8).attr("refY",5).attr("markerWidth",7).attr("markerHeight",7).attr("orient","auto-start-reverse").append("path").attr("d","M 0 0 L 10 5 L 0 10 z").attr("fill","#4CAF50");const filter=defs.append("filter").attr("id","dropShadow").attr("x","-30%").attr("y","-30%").attr("width","160%").attr("height","160%");filter.append("feGaussianBlur").attr("in","SourceAlpha").attr("stdDeviation",3).attr("result","blur");filter.append("feOffset").attr("dy",2).attr("dx",2).attr("result","offsetBlur");const feTransfer=filter.append("feComponentTransfer").attr("in","offsetBlur").attr("result","transferredBlur");feTransfer.append("feFuncA").attr("type","linear").attr("slope",0.4);const feMerge=filter.append("feMerge");feMerge.append("feMergeNode").attr("in","transferredBlur");feMerge.append("feMergeNode").attr("in","SourceGraphic");
+    }
+
+    // --- Layout Calculation Function (Sin cambios lógicos, pero usará los nuevos layoutW) ---
+    function calculateLayout(networkSpec) {
+        console.log("Calculating layout V19 (Hypertuned)...");
+        let currentX = config.startX;
+        const layoutData = JSON.parse(JSON.stringify(networkSpec)); // Deep copy
+
+        layoutData.forEach((d, i) => {
+            d.x_center = currentX;
+            d.y_center = config.baseY;
+            // Bbox usa el layoutW/H/D definido en networkSpec (que ahora es diferente para capas hyper)
+            d.bbox = {
+                x_start: d.x_center - d.layoutW / 2, x_end: d.x_center + d.layoutW / 2,
+                y_start: d.y_center - d.layoutH / 2, y_end: d.y_center + d.layoutH / 2,
+                z_start: -d.layoutD / 2, z_end: d.layoutD / 2
+            };
+
+            let nextItem = (i + 1 < layoutData.length) ? layoutData[i + 1] : null;
+            let spacing = config.horizontalSpacing; // Usando el espaciado posiblemente ajustado
+            d.logical_x_start = d.bbox.x_start;
+
+            if (d.type === 'resblock') {
+                // Calculate Add op position relative to the block end
+                d.op_x_center = d.bbox.x_end + config.resInternalSpacing + config.opRadius;
+                d.op_y_center = d.y_center;
+                d.logical_x_end = d.op_x_center + config.opRadius; // Logical end is after the Add op
+
+                // Calculate start point for the next layer based on the Add op position
+                currentX = d.logical_x_end + spacing + (nextItem ? nextItem.layoutW / 2 : 0);
+
+                // Skip connection anchor points
+                d.skip_origin_x_abs = (i > 0) ? layoutData[i - 1].logical_x_end : d.bbox.x_start; // From end of previous logical block
+                d.skip_origin_y_abs = d.y_center;
+                d.skip_target_x_abs = d.op_x_center; // To the Add op center
+                d.skip_target_y_abs = d.op_y_center - config.opRadius; // Target slightly above center for arrow marker
+
+            } else {
+                d.logical_x_end = d.bbox.x_end; // Logical end is just the block end
+                // Calculate start point for the next layer based on the block end
+                currentX = d.logical_x_end + spacing + (nextItem ? nextItem.layoutW / 2 : 0);
+            }
+
+            // Optional: Log positions for debugging layout with new widths
+            // console.log(`Layer ${d.id}: Units=${d.units}, Width=${d.layoutW}, Center X=${d.x_center.toFixed(1)}, BBox X=[${d.bbox.x_start.toFixed(1)}, ${d.bbox.x_end.toFixed(1)}], Logical End X=${d.logical_x_end.toFixed(1)}`);
+        });
+
+        const finalElement = layoutData[layoutData.length - 1];
+        const requiredWidth = finalElement.logical_x_end + config.startX; // Add start offset back
+        console.log(`Layout V19 (Hypertuned) finished. Final logical end X: ${finalElement.logical_x_end.toFixed(1)}. Est required width: ~${requiredWidth.toFixed(1)} (SVG Width: ${config.svgWidth})`);
+
+        if (requiredWidth > config.svgWidth) {
+            console.warn(`CALCULATED REQUIRED WIDTH (${requiredWidth.toFixed(1)}) MAY EXCEED SVG WIDTH (${config.svgWidth})! Adjust config.svgWidth or spacing.`);
+        }
+
+        return layoutData;
+    }
+
+
+    // --- Sphere Cloud Drawing Function (Sin cambios lógicos, usará units y bbox del layout) ---
+    function drawSphereCloud(group, layerData, baseUnits = Infinity) {
+        const { units, bbox, id } = layerData;
+        const { x_start, x_end, y_start, y_end, z_start, z_end } = bbox;
+        const w = x_end - x_start;
+        const h = y_end - y_start;
+        const d = z_end - z_start;
+        const points = [];
+
+        // console.log(`Layer ${id}: Placing ${units} points (V19 logic) into Width: ${w.toFixed(1)}...`);
+
+        // Scales for appearance based on Z-depth
+        const perspectiveScale = d3.scaleLinear().domain([z_start, z_end]).range([config.neuronPerspectiveScaleMax, config.neuronPerspectiveScaleMin]);
+        const opacityScale = d3.scaleLinear().domain([z_start, z_end]).range([config.neuronOpacityMax, config.neuronOpacityMin]);
+
+        // Simplified grid calculation (adaptable density)
+        let numZ = 4; // Fixed number of depth layers for simplicity
+        if (units < 10) numZ = Math.max(1, Math.min(units, 3)); // Fewer depth layers for very small unit counts
+        if (w <= 0 || h <= 0 || d <= 0) {
+             console.warn(`Layer ${id}: Invalid dimensions W=${w}, H=${h}, D=${d}. Cannot draw spheres.`);
+             return []; // Avoid division by zero or NaN
+        }
+
+        let unitsPerZ = Math.ceil(units / numZ);
+        // Estimate grid based on volume/area, adjusted for aspect ratio
+        let gridRatio = Math.sqrt(w / h) || 1; // Avoid NaN if h=0
+        let numY = Math.max(1, Math.round(Math.sqrt(unitsPerZ / gridRatio)));
+        let numX = Math.max(1, Math.ceil(unitsPerZ / numY));
+        numX = Math.max(numX, 1); // Ensure at least 1
+        numY = Math.max(numY, 1); // Ensure at least 1
+
+        // console.log(`Layer ${id} (${units} units, Width ${w.toFixed(1)}): Grid approx ${numX}x${numY}x${numZ}`);
+
+        let count = 0;
+        const avgSpacingX = numX > 1 ? w / (numX - 1) : w; // Use full width if only 1 column
+        const avgSpacingY = numY > 1 ? h / (numY - 1) : h; // Use full height if only 1 row
+        const avgSpacingZ = numZ > 1 ? d / (numZ - 1) : d; // Use full depth if only 1 z-layer
+        const jitterX = avgSpacingX * config.neuronGridJitterFactor;
+        const jitterY = avgSpacingY * config.neuronGridJitterFactor;
+        const jitterZ = avgSpacingZ * config.neuronGridJitterFactor;
+
+        for (let iz = 0; iz < numZ && count < units; iz++) {
+            const z_base = z_start + (numZ > 1 ? iz * d / (numZ - 1) : d / 2); // Center if only 1 layer
+            const remainingUnits = units - count;
+            // Recalculate XY grid for this Z-slice based on remaining units for better distribution
+            let currentUnitsPerZ = Math.min(remainingUnits, Math.ceil(units / numZ)); // Don't exceed target for this slice
+             let currentNumY = Math.max(1, Math.round(Math.sqrt(currentUnitsPerZ / gridRatio)));
+            let currentNumX = Math.max(1, Math.ceil(currentUnitsPerZ / currentNumY));
+            currentUnitsPerZ = Math.min(remainingUnits, currentNumX * currentNumY); // Cap by calculated grid * remaining
+
+            let layerCount = 0;
+            for (let iy = 0; iy < currentNumY && layerCount < currentUnitsPerZ; iy++) {
+                const y_base = y_start + (currentNumY > 1 ? iy * h / (currentNumY - 1) : h / 2);
+                for (let ix = 0; ix < currentNumX && layerCount < currentUnitsPerZ; ix++) {
+                    if (count >= units) break; // Stop if total units reached
+
+                    const x_base = x_start + (currentNumX > 1 ? ix * w / (currentNumX - 1) : w / 2);
+
+                    // Apply jitter, constrained within bbox approximately
+                    const x_jitter = x_base + (Math.random() - 0.5) * jitterX;
+                    const y_jitter = y_base + (Math.random() - 0.5) * jitterY;
+                    const z_jitter = z_base + (Math.random() - 0.5) * jitterZ;
+                    const z = Math.max(z_start, Math.min(z_end, z_jitter)); // Clamp Z within depth bounds
+
+                    const isBaseUnit = count < baseUnits; // Not really used here unless comparing diffs visually
+                    const finalOpacity = isBaseUnit ? opacityScale(z) : opacityScale(z) * config.neuronOpacityHighlightFactor;
+                    const finalScale = perspectiveScale(z);
+
+                    // Final check for NaN before pushing (can happen with zero dimensions)
+                     if (!isNaN(x_jitter) && !isNaN(y_jitter) && !isNaN(z)) {
+                        points.push({
+                            x: x_jitter + z * 0.05, // Slight Z perspective shift
+                            y: y_jitter - z * 0.05,
+                            z: z,
+                            scale: finalScale,
+                            opacity: finalOpacity,
+                            isBase: isBaseUnit
+                        });
+                        count++;
+                        layerCount++;
+                    } else {
+                         console.warn(`Layer ${id}: NaN coordinate detected during point generation (ix=${ix}, iy=${iy}, iz=${iz}). Skipping point.`);
+                    }
+                }
+                if (count >= units) break;
+            }
+             if (count >= units) break;
+        }
+
+        // If exact count not met due to grid rounding, could add/remove randomly, but usually close enough
+        while (points.length > units) { points.pop(); } // Trim excess
+        // Could add missing points randomly within bbox if significantly under
+
+        if (points.length !== units) {
+            console.warn(`Layer ${id}: Point count mismatch ${points.length}/${units}. Grid estimation might be imperfect.`);
+        }
+
+        // Sort by Z for correct draw order (back to front)
+        points.sort((a, b) => a.z - b.z);
+
+        const sphereGroup = group.append("g").attr("id", `${id}-spheres`);
+        try {
+            sphereGroup.selectAll(`.neuron-sphere-${id}`)
+                .data(points)
+                .enter()
+                .append("circle")
+                .attr("class", `neuron-sphere neuron-sphere-${id}`)
+                .attr("fill", "url(#gradNeuron)")
+                .attr("cx", p => p.x) // Use calculated x
+                .attr("cy", p => p.y) // Use calculated y
+                .attr("r", p => Math.max(0.5, config.neuronRadius * p.scale)) // Use scaled radius
+                .attr("opacity", p => Math.max(0.1, p.opacity)); // Use scaled opacity
+        } catch (error) {
+            console.error(`Error drawing spheres for layer ${id}:`, error);
+        }
+        return points; // Return the calculated points
+    }
+
+
+    // --- Schematic Connection Drawing Function (Sin cambios) ---
+    function drawSchematicConnections(group, prevLayerData, currentLayerData, prevPoints, currentPoints) {
+        // ... (código idéntico al de V19 original) ...
+        if(!prevPoints||!currentPoints||prevPoints.length===0||currentPoints.length===0){return;};const connGroup=group.append("g").attr("id",`${currentLayerData.id}-connections`).lower();const numConns=Math.min(config.schematicConnCount,prevPoints.length,currentPoints.length);const zThresholdPrev=prevLayerData.bbox.z_start+(prevLayerData.bbox.z_end-prevLayerData.bbox.z_start)*0.7;const zThresholdCurr=currentLayerData.bbox.z_start+(currentLayerData.bbox.z_end-currentLayerData.bbox.z_start)*0.3;let sourcePoints=prevPoints.filter(p=>p.z>=zThresholdPrev);let targetPoints=currentPoints.filter(p=>p.z<=zThresholdCurr);if(sourcePoints.length===0)sourcePoints=prevPoints.slice(-Math.min(prevPoints.length,20));if(targetPoints.length===0)targetPoints=currentPoints.slice(0,Math.min(currentPoints.length,20));if(sourcePoints.length===0||targetPoints.length===0){return;}const centerEmphasisScale=d3.scaleLinear().domain([0,config.layerHeight/2]).range([1,0.5]).clamp(true);for(let i=0;i<numConns;i++){const p1=sourcePoints[Math.floor(Math.random()*sourcePoints.length)];const p2=targetPoints[Math.floor(Math.random()*targetPoints.length)];if(isFinite(p1.x)&&isFinite(p1.y)&&isFinite(p2.x)&&isFinite(p2.y)){const midX=(p1.x+p2.x)/2;const midY=(p1.y+p2.y)/2;const dx=p2.x-p1.x;const dy=p2.y-p1.y;const length=Math.max(1,Math.sqrt(dx*dx+dy*dy));const curveIntensity=length>50?0.15:0.1;const offsetX=-dy/length*length*curveIntensity;const offsetY=dx/length*length*curveIntensity;const controlX=midX+offsetX;const controlY=midY+offsetY;const distFromCenter=Math.abs(midY-config.baseY);const emphasis=centerEmphasisScale(distFromCenter);const strokeOpacity=config.connectionOpacityMin+(config.connectionOpacityMax-config.connectionOpacityMin)*emphasis;const strokeWidth=config.connectionWidthMin+(config.connectionWidthMax-config.connectionWidthMin)*emphasis;connGroup.append("path").attr("class","schematic-connection").attr("d",`M ${p1.x},${p1.y} Q ${controlX},${controlY} ${p2.x},${p2.y}`).style("stroke-opacity",strokeOpacity).style("stroke-width",strokeWidth);}}
+    }
+
+    // --- Label & Formula Drawing Function (Sin cambios) ---
+    function drawLabelsAndFormulas(group, d) {
+        // ... (código idéntico al de V19 original) ...
+        let labelX=d.x_center;let formulaX=d.x_center;let dimLabelY=d.bbox.y_end+config.labelYOffset;let formulaY=dimLabelY+config.formulaYOffset;let dimUnits=d.units===3?"(3 Cls)":`(${d.units} Units)`;let mainLabel=d.label;if(d.type==='resblock'){labelX=d.x_center;formulaX=d.x_center;mainLabel=d.internalLabel;group.append("text").attr("class","resblock_label").attr("x",(d.bbox.x_start+d.op_x_center)/2).attr("y",d.bbox.y_start-config.resBlockLabelYOffset).text(d.blockLabel);group.append("text").attr("class","op_label").attr("x",d.op_x_center).attr("y",d.op_y_center+config.opRadius+12).text("Add");if(d.resFormula){group.append("text").attr("class","formula-label").attr("x",d.op_x_center).attr("y",d.op_y_center+config.opRadius+25).text(d.resFormula);}}if(mainLabel){group.append("text").attr("class","label").attr("x",labelX).attr("y",d.bbox.y_start-config.activationYOffset).text(mainLabel);}if(d.activation){group.append("text").attr("class","activation").attr("x",labelX).attr("y",d.bbox.y_start-config.activationYOffset+18).text(d.activation);}group.append("text").attr("class","dim_label").attr("x",labelX).attr("y",dimLabelY).text(dimUnits);if(d.formula){group.append("text").attr("class","formula-label").attr("x",formulaX).attr("y",formulaY).text(d.formula);}
+    }
+
+    // --- Connector Drawing Function (Sin cambios lógicos, usará coords del layout) ---
+    function drawConnectors(svg, layoutData) {
+        // ... (código idéntico al de V19 original) ...
+        layoutData.forEach((d,i)=>{if(i>0){const prevNode=layoutData[i-1];svg.append("line").attr("class","data_flow").attr("x1",prevNode.logical_x_end).attr("y1",prevNode.y_center).attr("x2",d.logical_x_start).attr("y2",d.y_center);}if(d.type==='resblock'){svg.append("line").attr("class","data_flow").attr("x1",d.bbox.x_end).attr("y1",d.y_center).attr("x2",d.op_x_center-config.opRadius).attr("y2",d.y_center);if(d.skip_origin_x_abs&&isFinite(d.skip_origin_x_abs)&&isFinite(d.skip_target_x_abs)){let skipStartX=d.skip_origin_x_abs;let skipStartY=d.skip_origin_y_abs;let skipEndX=d.skip_target_x_abs;let skipEndY=d.skip_target_y_abs;let controlX=(skipStartX+skipEndX)/2;let controlY=d.y_center-config.skipArcHeight;if(!isFinite(controlX))controlX=skipEndX;if(!isFinite(controlY))controlY=skipEndY-50;svg.append("path").attr("class","skip_connection").attr("d",`M ${skipStartX},${skipStartY} Q ${controlX},${controlY} ${skipEndX},${skipEndY}`);}else{console.warn(`Skipping skip connection for ${d.id} due to invalid coordinates.`);}}});
+    }
+
+
+    // --- Main Drawing Execution (Sin cambios lógicos) ---
+    function renderNetwork(networkSpec) { // Takes spec as argument
+        try {
+            console.log("Rendering network V19 (Hypertuned)...");
+            setupDefs();
+            const layout = calculateLayout(networkSpec); // Use the passed spec
+            const layerPoints = {}; // Store calculated sphere points for connections
+
+            diagramGroup.selectAll("*").remove(); // Clear previous elements
+
+            // Create groups for each layer first (for layering control)
+            const layerGroups = diagramGroup.selectAll(".layerGroup")
+                .data(layout)
+                .enter()
+                .append("g")
+                .attr("class", "layerGroup filter-shadow") // Apply shadow filter here
+                .attr("id", d => `group_${d.id}`);
+
+            // Group for schematic connections, added first to be underneath spheres
+            const connectionGroup = diagramGroup.append("g").attr("id", "connectionsGroup").lower();
+
+            // Draw sphere clouds and ResBlock ops (within their layer group)
+            layerGroups.each(function(d) { // 'function' to keep 'this' context
+                const group = d3.select(this);
+                // baseUnits isn't really used unless dynamically highlighting diffs
+                const baseUnits = d.units;
+                layerPoints[d.id] = drawSphereCloud(group, d, baseUnits); // Draw spheres, store points
+
+                if (d.type === 'resblock') { // Draw Ops within the layer group
+                    group.append("circle").attr("class", "op_symbol_circle")
+                        .attr("cx", d.op_x_center).attr("cy", d.op_y_center).attr("r", config.opRadius);
+                    group.append("text").attr("class", "op_symbol_text")
+                        .attr("x", d.op_x_center).attr("y", d.op_y_center).text("⊕");
+                }
+            });
+
+            // Draw schematic connections using the calculated points, into their dedicated group
+            layout.forEach((d, i) => {
+                if (i > 0) {
+                    // Ensure both sets of points exist before drawing connections
+                     if (layerPoints[layout[i-1].id] && layerPoints[d.id]) {
+                        drawSchematicConnections(connectionGroup, layout[i-1], d, layerPoints[layout[i-1].id], layerPoints[d.id]);
+                    } else {
+                        console.warn(`Skipping schematic connections for ${d.id}: Missing points for layer ${layout[i-1].id} or ${d.id}.`);
+                    }
+                }
+            });
+
+            // Draw labels and formulas on top of spheres/ops
+            layerGroups.each(function(d) {
+                drawLabelsAndFormulas(d3.select(this), d); // Use combined function
+            });
+
+            // Draw main connectors (arrows, skips) on the very top
+            drawConnectors(diagramGroup, layout); // Draw on the main diagram group
+
+            console.log("Rendering finished V19 (Hypertuned).");
+
+        } catch (error) {
+            console.error("!!! Critical Error during Rendering !!!", error);
+            // Display error message in SVG for visibility
+            svg.append("text").attr("x", 10).attr("y", 50).attr("fill", "red")
+                .text(`Error rendering diagram: ${error.message}. Check console (F12).`)
+                .style("font-family", "monospace").style("font-size", "12px");
+        }
+    }
+
+    // --- Render the ResNet HYPERTUNED Diagram ---
+    // *** CAMBIO: Llamada con networkSpecHyper ***
+    renderNetwork(networkSpecHyper);
+    console.log("Initial render call complete V19 - Hypertuned.");
+
+</script>
+
+</body>
+</html>
